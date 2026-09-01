@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "osu! Better Profile",
+  "version": "1.0.0",
+  "description": "Enhance your osu! profile page with detailed statistics and advanced player data.",
+  "author": "xwedz",
+  "permissions": [
+    "storage",
+    "identity"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://osu.ppy.sh/users/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
