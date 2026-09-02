@@ -59,7 +59,7 @@ This extension needs its own osu! OAuth application to talk to the API:
    URL (printed by `chrome.identity.getRedirectURL()` — you can log this from
    the extension's background service worker, or compute it as
    `https://<extension-id>.chromiumapp.org/`)
-3. Copy your new **Client ID** and **Client Secret** into `background.js`
+3. Copy your new **Client ID** and **Client Secret** into `secrets.example.js`
 
 The first time you visit a profile page, a login popup will ask you to
 authorize the app with your osu! account. After that, your token is cached
@@ -93,7 +93,7 @@ locally so you won't be prompted again until it expires.
 
 Issues and pull requests are welcome!
 
-## License
+_## License_
 
 _(add a license, e.g. MIT, if you'd like others to be able to reuse this)_
 
