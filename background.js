@@ -1,3 +1,5 @@
+importScripts('secrets.js');
+
 const REDIRECT_URL = chrome.identity.getRedirectURL();
 
 // Small safety buffer so we refresh slightly before the token truly expires
