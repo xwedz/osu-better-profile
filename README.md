@@ -43,10 +43,10 @@ Since this isn't published on the Chrome Web Store, you'll need to load it
 manually:
 
 1. Clone or download this repository
-2. Open `chrome://extensions` in Chrome
-3. Enable **Developer mode** (toggle in the top-right corner)
-4. Click **Load unpacked** and select this project's folder
-5. Finish Setup / OAuth part down below
+2. Finish Setup / OAuth part down below
+3. Open `chrome://extensions` in Chrome
+4. Enable **Developer mode** (toggle in the top-right corner)
+5. Click **Load unpacked** and select this project's folder
 6. Visit any osu! profile page (`https://osu.ppy.sh/users/...`) and you
    should see stats appear on score boxes 
 7. (❗Press F5 every time entering a new userpage❗)
@@ -58,8 +58,8 @@ This extension needs its own osu! OAuth application to talk to the API:
 1. Register a new OAuth application at
    [osu!'s OAuth settings page](https://osu.ppy.sh/home/account/edit#new-oauth-application)
 2. Set the **Application Name** whatever you want and **Application Callback URL** to your extension's identity redirect
-   URL (open **Service Worker** for this extension on chrome extension page,the URL will be printed by typing `chrome.identity.getRedirectURL()`
-    —❗there might be a warning if you just copy and paste it❗. If you are concerning about it,feel free to do any research do understand what is going on)
+   URL (open **Service Worker** for this extension on chrome extension page, the URL will be printed by typing `chrome.identity.getRedirectURL()`
+    —❗there might be a warning if you just copy and paste it❗. If you are concerning about it, feel free to do any research do understand what you are doing)
 3. Copy your **Client ID** and **Client Secret** on the **OAuth application page** into `secrets.example.js`
 
 The first time you visit a profile page, a login popup will ask you to
