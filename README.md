@@ -55,8 +55,8 @@ This extension needs its own osu! OAuth application to talk to the API:
    (the URL will be printed by opening **Service Worker** of this extension on chrome extension page, type `chrome.identity.getRedirectURL()` on console  
     —❗there might be a warning if you just copy and paste it❗. If you are concerning about it, feel free to do any research to understand what you are doing)  
     click **Register Application**
-7. Copy your **Client ID** and **Client Secret** on the **OAuth application page** into `secrets.example.js`
-8. save `secrets.example.js` and go to chrome extension page, click reload on this extension
+7. Copy your **Client ID** and **Client Secret** on the **OAuth application page** into `secrets.example.js` and❗rename the file to `secrets.js`❗
+8. save `secrets.js` and go to chrome extension page, click reload on this extension
 8. Visit any osu! profile page (`https://osu.ppy.sh/users/...`) and you
    should see stats appear on score boxes 
 9. (❗Press F5 every time entering a new userpage❗)
