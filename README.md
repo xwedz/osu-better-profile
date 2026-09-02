@@ -13,8 +13,6 @@ page individually.
   on a player's profile
 - 🔗 Shows player combo alongside the beatmap's max possible combo (`923/1024`)
 - ⚡ Works across pinned scores, top ("best") scores, and #1 ("firsts") scores
-- 🔁 Automatically re-detects new scores as they load — no page refresh needed
-  when navigating between profiles or clicking "Show More"
 - 🌐 Supports both classic/stable and lazer scoring formats
 - 🔒 Uses osu!'s official OAuth flow — your credentials never leave osu!'s own
   login page
