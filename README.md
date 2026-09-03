@@ -23,8 +23,8 @@ page individually.
 
 ## How it works
 
-This extension talks directly to the [osu! API v2](https://osu.ppy.sh/docs/index.html)
-using OAuth. When you're on a profile page, it:
+This extension talks directly to the [osu! API v2](https://osu.ppy.sh/docs/index.html).
+When you're on a profile page, it:
 
 1. Watches the page for score boxes as they appear (initial load, "Show More"
    clicks, or navigating to a different profile)
@@ -35,41 +35,65 @@ using OAuth. When you're on a profile page, it:
 Only scores that are actually visible on screen are fetched — nothing is
 downloaded in bulk up front.
 
-## Installation & Setup / OAuth
+Since this extension only ever reads **public** data (other players' scores
+and beatmaps, not anything tied to whoever is using the extension), it
+authenticates with osu! using the **client credentials** grant — an
+app-level "guest" token that requires no user login at all. Minting that
+token requires the app's client secret, which can't safely live inside a
+browser extension (anyone can read an extension's source), so a small
+Cloudflare Worker (see `worker/worker.js`) holds the secret and hands out
+fresh tokens on request. The extension itself never sees or stores the
+secret.
 
-Since this isn't published on the Chrome Web Store, you'll need to load it
-manually:
+## Installation
 
-1. Clone or download this repository
+1. Download this repository (green **Code → Download ZIP** button on GitHub,
+   then unzip it — or `git clone` if you prefer)
 2. Open `chrome://extensions` in Chrome
 3. Enable **Developer mode** (toggle in the top-right corner)
-4. Click **Load unpacked** and select this project's folder
+4. Click **Load unpacked** and select the unzipped project folder
+5. Visit any osu! profile page (`https://osu.ppy.sh/users/...`) and stats
+   should start appearing on score boxes — no login, no setup, no API keys
 
-This extension needs its own osu! OAuth application to talk to the API:
+That's it — this extension talks to a token-issuing server that's already
+deployed and configured, so there's nothing else to set up on your end.
 
-5. Register a new OAuth application at
-   [osu!'s OAuth settings page](https://osu.ppy.sh/home/account/edit#new-oauth-application)
-6. Set the **Application Name** to whatever you want and **Application Callback URL** to your extension's identity redirect URL  
-   (the URL will be printed by opening **Service Worker** of this extension on chrome extension page, type `chrome.identity.getRedirectURL()` on console  
-    —❗there might be a warning if you just copy and paste it❗. If you are concerning about it, feel free to do any research to understand what you are doing)  
-    click **Register Application**
-7. Copy your **Client ID** and **Client Secret** on the **OAuth application page** into `secrets.example.js` and❗rename the file to `secrets.js`❗
-8. save `secrets.js` and go to chrome extension page, click reload on this extension
-8. Visit any osu! profile page (`https://osu.ppy.sh/users/...`) and you
-   should see stats appear on score boxes 
-9. (❗Press F5 every time entering a new userpage❗)
+## Self-hosting your own backend (optional)
 
-The first time you visit a profile page, a login popup will ask you to
-authorize the app with your osu! account. After that, your token is cached
-locally so you won't be prompted again until it expires.
+You don't need this section unless you want to run your own copy of the
+token-issuing Worker instead of relying on the one this extension ships
+pointing at (e.g. you forked this project, or just want your own
+infrastructure).
+
+This extension needs an osu! OAuth application and a small server-side
+piece to hold that application's secret:
+
+1. Register a new OAuth application at
+   [osu!'s OAuth settings page](https://osu.ppy.sh/home/account/edit#new-oauth-application).
+   The callback URL doesn't matter for this setup since we're not using the
+   interactive login flow — any placeholder value works.
+2. Deploy `worker/worker.js` as a Cloudflare Worker:
+   - Cloudflare dashboard → **Workers & Pages** → **Create Worker**
+   - Paste in the contents of `worker/worker.js`
+   - Under that worker's **Settings → Variables**, add `OSU_CLIENT_ID` and
+     `OSU_CLIENT_SECRET` (mark the secret one as **Encrypt**)
+   - Deploy, and note the worker's URL (something like
+     `https://osu-better-profile-token.<your-subdomain>.workers.dev`)
+3. In `background.js`, change `TOKEN_ENDPOINT` to point at your own Worker's
+   URL instead
+
+After that, your copy of the extension will fetch tokens from your own
+Worker instead of the default one.
 
 ## Project structure
 
 ```
 .
-├── manifest.json    # Chrome extension manifest (Manifest V3)
-├── background.js    # Handles OAuth login and token caching
+├── manifest.json     # Chrome extension manifest (Manifest V3)
+├── background.js     # Fetches/caches an API token from our Worker
 ├── content.js        # Injected into osu! profile pages; fetches and renders stats
+├── worker/
+│   └── worker.js      # Cloudflare Worker — holds the OAuth secret, mints tokens
 └── README.md
 ```
 
@@ -77,8 +101,7 @@ locally so you won't be prompted again until it expires.
 
 | Permission  | Why it's needed                                      |
 | ----------- | ----------------------------------------------------- |
-| `identity`  | Runs osu!'s OAuth login flow via `chrome.identity`     |
-| `storage`   | Caches the OAuth access token locally between sessions |
+| `storage`   | Caches the osu! API access token locally between sessions |
 
 ## Known limitations
 
