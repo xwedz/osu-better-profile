@@ -1,6 +1,9 @@
-importScripts('secrets.js');
+// background.js
 
-const REDIRECT_URL = chrome.identity.getRedirectURL();
+// Your own deployed Worker's URL — see worker/worker.js and the README for
+// deployment steps. This is a public URL, so it's fine for it to be here;
+// the actual secret lives only in the Worker's environment variables.
+const TOKEN_ENDPOINT = 'https://osu-better-profile-token.law5616583.workers.dev/token';
 
 // Small safety buffer so we refresh slightly before the token truly expires
 const EXPIRY_BUFFER_MS = 60 * 1000;
@@ -18,13 +21,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 /**
- * Returns a cached, still-valid token if we have one, otherwise runs the
- * interactive OAuth flow once and caches the result.
+ * Returns a cached, still-valid token if we have one, otherwise fetches a
+ * fresh one from our own Worker.
  *
- * This matters a lot now that content.js can legitimately ask for a token
- * on *every* SPA navigation (see content.js) — without this cache, every
- * profile you visit would pop up a brand new osu! login window, which
- * would be awful UX.
+ * Note this extension no longer runs osu!'s interactive OAuth login flow at
+ * all — this extension only ever reads PUBLIC data (other players' scores),
+ * never anything tied to whoever is using the extension, so there's no need
+ * to make them log into their own osu! account. Our Worker fetches an
+ * app-level "guest" token via the client-credentials grant instead, which
+ * needs the app's client secret — which is why that step has to happen on
+ * a server we control rather than in this extension.
  */
 async function getValidToken() {
     const { osu_token, osu_token_expires_at } = await chrome.storage.local.get([
@@ -36,74 +42,30 @@ async function getValidToken() {
         return osu_token;
     }
 
-    return authenticateOsu();
+    return fetchTokenFromWorker();
 }
 
-/**
- * Handles the OAuth 2.0 flow with osu! API
- */
-async function authenticateOsu() {
-    // 1. 建構授權網址
-    const authUrl = new URL('https://osu.ppy.sh/oauth/authorize');
-    authUrl.searchParams.append('client_id', CLIENT_ID);
-    authUrl.searchParams.append('redirect_uri', REDIRECT_URL);
-    authUrl.searchParams.append('response_type', 'code');
-    authUrl.searchParams.append('scope', 'public');
+async function fetchTokenFromWorker() {
+    const res = await fetch(TOKEN_ENDPOINT, { method: 'GET' });
 
-    return new Promise((resolve, reject) => {
-        // 2. 彈出 Chrome 內建的安全授權視窗
-        chrome.identity.launchWebAuthFlow({
-            url: authUrl.href,
-            interactive: true // 允許彈出視窗讓使用者點擊
-        }, async (redirectUrl) => {
-            if (chrome.runtime.lastError) {
-                return reject(new Error(chrome.runtime.lastError.message));
-            }
-            if (!redirectUrl) {
-                return reject(new Error("No redirect URL returned (popup closed?)."));
-            }
+    if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        throw new Error(`Token request failed (${res.status}): ${detail}`);
+    }
 
-            // 3. 從回傳的網址中擷取「授權碼 (Auth Code)」
-            const urlObj = new URL(redirectUrl);
-            const code = urlObj.searchParams.get('code');
+    const data = await res.json();
+    if (!data.access_token) {
+        throw new Error('Worker response did not include an access_token.');
+    }
 
-            if (!code) {
-                return reject(new Error("Authorization code not found."));
-            }
-
-            // 4. 拿授權碼去換取真正的 Access Token
-            try {
-                const response = await fetch('https://osu.ppy.sh/oauth/token', {
-                    method: 'POST',
-                    headers: {
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        client_id: CLIENT_ID,
-                        client_secret: CLIENT_SECRET,
-                        code: code,
-                        grant_type: 'authorization_code',
-                        redirect_uri: REDIRECT_URL
-                    })
-                });
-
-                const data = await response.json();
-
-                if (data.access_token) {
-                    // 將 Token 和過期時間安全地儲存在 Chrome 擴充功能專屬的空間
-                    const expiresAt = Date.now() + (data.expires_in ? data.expires_in * 1000 : 3600 * 1000);
-                    await chrome.storage.local.set({
-                        osu_token: data.access_token,
-                        osu_token_expires_at: expiresAt
-                    });
-                    resolve(data.access_token);
-                } else {
-                    reject(new Error("Failed to exchange token: " + JSON.stringify(data)));
-                }
-            } catch (error) {
-                reject(error);
-            }
-        });
+    // osu!'s client-credentials tokens last 24h by default; we don't get an
+    // expires_in back from our own worker response currently, so just cache
+    // for a conservative period and let getValidToken() re-check regardless.
+    const expiresAt = Date.now() + 23 * 60 * 60 * 1000; // ~23h, safely under osu!'s 24h
+    await chrome.storage.local.set({
+        osu_token: data.access_token,
+        osu_token_expires_at: expiresAt
     });
+
+    return data.access_token;
 }
