@@ -1,3 +1,0 @@
-// secrets.example.js
-const CLIENT_ID = "YOUR_CLIENT_ID_HERE";
-const CLIENT_SECRET = "YOUR_CLIENT_SECRET_HERE";
