@@ -116,9 +116,9 @@ Worker instead of the default one.
 
 Issues and pull requests are welcome!
 
-_## License_
+## License
 
-_(add a license, e.g. MIT, if you'd like others to be able to reuse this)_
+MIT — see [LICENSE](./LICENSE) for the full text.
 
 ## Disclaimer
 
