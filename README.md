@@ -54,8 +54,7 @@ secret.
 4. Click **Load unpacked** and select the unzipped project folder
 5. Visit any osu! profile page (`https://osu.ppy.sh/users/...`) and stats
    should start appearing on score boxes — no login, no setup, no API keys
-
-⚠️You currently need to F5 everytime you enter a new userpage⚠️  
+ 
 That's it — this extension talks to a token-issuing server that's already
 deployed and configured, so there's nothing else to set up on your end.
 
