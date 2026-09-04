@@ -14,8 +14,9 @@ page individually.
 - 🔗 Shows player combo alongside the beatmap's max possible combo (`923/1024`)
 - ⚡ Works across pinned scores, top ("best") scores, and #1 ("firsts") scores
 - 🌐 Supports both classic/stable and lazer scoring formats
-- 🔒 Uses osu!'s official OAuth flow — your credentials never leave osu!'s own
-  login page
+- 🟢 Supports every mode(osu/taiko/catch/mania)
+- 🔒 No login required — this extension only reads public score data, never 
+  anything tied to you personally
 
 ## Screenshots
 
