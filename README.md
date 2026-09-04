@@ -45,7 +45,7 @@ Cloudflare Worker (see `worker/worker.js`) holds the secret and hands out
 fresh tokens on request. The extension itself never sees or stores the
 secret.
 
-## Installation
+## ✅Installation
 
 1. Download this repository (green **Code → Download ZIP** button on GitHub,
    then unzip it — or `git clone` if you prefer)
