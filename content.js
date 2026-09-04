@@ -1,6 +1,7 @@
 console.log("🟢 [osu! Better Profile] Extension loaded successfully.");
 
 let lastProcessedPath = null;
+let lastPolledPath = window.location.pathname;
 let cachedToken = null;
 let domObserver = null;
 
@@ -186,7 +187,7 @@ function getComboText(scoreData) {
     const playerCombo = scoreData.max_combo;
     const beatmapMaxCombo = beatmapMaxComboCache.get(scoreData.beatmap_id);
     return beatmapMaxCombo
-        ? `${playerCombo}<span style="font-size: 10px; color: rgba(255, 255, 255, 0.5);">x / ${beatmapMaxCombo}x</span>`
+        ? `${playerCombo}<span style="font-size: 10px; color: rgba(255, 255, 255, 0.5);">x / </span><span style="font-size: 13px; color: rgba(255, 255, 255, 0.75);">${beatmapMaxCombo}x</span>`
         : `${playerCombo}<span style="font-size: 10px; color: rgba(255, 255, 255, 0.5);">x</span>`;
 }
 
@@ -265,12 +266,17 @@ function updateComboText(element, scoreData) {
  * steady trickle instead of all popping in at once after several seconds.
  */
 async function processScoreElements(elements) {
-    // De-dupe and immediately mark everything "pending" so a second
-    // mutation event firing before this batch finishes can't queue the
-    // same elements twice.
+    // De-dupe based on the ACTUAL score currently linked, not just a blunt
+    // "have we ever touched this element" flag. This matters because we now
+    // rescan periodically as a safety net (see handlePossibleNavigation) —
+    // if we only checked "already injected", those rescans would either do
+    // nothing useful (element already marked, even though Vue swapped in a
+    // different score's data underneath it) or cause duplicate stat blocks
+    // (if we blindly cleared the flag every rescan). Comparing score IDs
+    // means a rescan is always safe: it's a no-op when nothing changed, and
+    // correctly refreshes when the underlying score genuinely did change.
     const toProcess = [];
     for (const element of elements) {
-        if (element.dataset.injected) continue; // "pending", "true", or "failed" — skip
         const linkElement = element.querySelector('.play-detail__bg-link');
         if (!linkElement) continue;
 
@@ -278,7 +284,18 @@ async function processScoreElements(elements) {
         const scoreId = href.split('/').filter(Boolean).pop();
         if (!scoreId) continue;
 
+        const alreadyDone = element.dataset.injected === 'true' && element.dataset.injectedScoreId === scoreId;
+        const alreadyPending = element.dataset.injected === 'pending' && element.dataset.pendingScoreId === scoreId;
+        if (alreadyDone || alreadyPending) continue;
+
+        // Either never processed, previously failed, or the score this box
+        // points to has changed since we last rendered it — clear out any
+        // stale stats block before queuing a fresh fetch, so a rescan can
+        // never leave two stacked on top of each other.
+        element.querySelector('.custom-osu-stats')?.remove();
+
         element.dataset.injected = "pending";
+        element.dataset.pendingScoreId = scoreId;
         toProcess.push({ element, scoreId });
     }
 
@@ -317,6 +334,7 @@ async function processScoreElements(elements) {
         try {
             renderStats(element, scoreData);
             element.dataset.injected = "true";
+            element.dataset.injectedScoreId = scoreId;
 
             if (!beatmapMaxComboCache.has(scoreData.beatmap_id)) {
                 pendingComboUpdates.push({ element, scoreData });
@@ -353,23 +371,44 @@ function setupScoreObserver() {
     processNewNodes(document.querySelectorAll('.play-detail--highlightable'));
 
     domObserver = new MutationObserver((mutations) => {
-        const newElements = [];
+        const newElements = new Set();
+
         for (const mutation of mutations) {
-            mutation.addedNodes.forEach(node => {
-                if (node.nodeType !== Node.ELEMENT_NODE) return;
-                if (node.matches?.('.play-detail--highlightable')) {
-                    newElements.push(node);
+            if (mutation.type === 'childList') {
+                mutation.addedNodes.forEach(node => {
+                    if (node.nodeType !== Node.ELEMENT_NODE) return;
+                    if (node.matches?.('.play-detail--highlightable')) {
+                        newElements.add(node);
+                    }
+                    node.querySelectorAll?.('.play-detail--highlightable')
+                        .forEach(el => newElements.add(el));
+                });
+            } else if (mutation.type === 'attributes') {
+                // Some navigations (e.g. switching the mode tab on the same
+                // profile) don't add/remove score boxes at all — Vue just
+                // updates the existing box's link href in place. childList
+                // mutations can't see that, so we watch the href directly
+                // and queue the containing box for a re-check (safe even if
+                // it was already "done" — processScoreElements compares the
+                // actual score ID before deciding whether anything changed).
+                const container = mutation.target.closest?.('.play-detail--highlightable');
+                if (container) {
+                    newElements.add(container);
                 }
-                node.querySelectorAll?.('.play-detail--highlightable')
-                    .forEach(el => newElements.push(el));
-            });
+            }
         }
-        if (newElements.length > 0) {
+
+        if (newElements.size > 0) {
             processNewNodes(newElements);
         }
     });
 
-    domObserver.observe(document.body, { childList: true, subtree: true });
+    domObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['href']
+    });
 }
 
 function processNewNodes(nodeList) {
@@ -380,12 +419,15 @@ function processNewNodes(nodeList) {
 
 /**
  * osu!'s profile page is a Vue single-page app: navigating to a different
- * user's profile (or switching the mode tab) updates the URL via
- * history.pushState WITHOUT a full page reload. We patch pushState /
- * replaceState and listen for popstate to detect these in-page route
- * changes, mainly so we can clear stale `injected` markers in case Vue
- * reuses a DOM node across the navigation (rare, but cheap to guard against)
- * — actual data loading is handled by the MutationObserver above either way.
+ * user's profile (or switching the mode tab) updates the URL WITHOUT a full
+ * page reload. We'd like to catch that via history.pushState/replaceState,
+ * but that approach only works if the site's own router looks up
+ * history.pushState fresh every time it navigates — many bundled routers
+ * cache a reference to it once at startup (often before this content script
+ * even runs), which silently makes that patch a no-op. So we keep the patch
+ * as a fast path when it DOES work, but back it with a plain interval that
+ * polls location.pathname directly — this doesn't care how the site
+ * implements navigation internally, so it can't be bypassed the same way.
  */
 function patchHistoryForSpaNavigation() {
     const fireLocationChange = () => window.dispatchEvent(new Event('osu-profile-locationchange'));
@@ -408,6 +450,22 @@ function patchHistoryForSpaNavigation() {
     window.addEventListener('osu-profile-locationchange', handlePossibleNavigation);
 }
 
+/**
+ * Polls the URL directly as a reliable fallback/primary trigger for
+ * navigation detection — see the comment on patchHistoryForSpaNavigation()
+ * for why the pushState patch alone isn't trustworthy here. Checking a
+ * string every 400ms is effectively free, and this guarantees we notice a
+ * navigation even if it's implemented in a way our patch can't see.
+ */
+function startUrlPolling() {
+    setInterval(() => {
+        if (window.location.pathname !== lastPolledPath) {
+            lastPolledPath = window.location.pathname;
+            handlePossibleNavigation();
+        }
+    }, 400);
+}
+
 function handlePossibleNavigation() {
     const userId = getUserIdFromUrl();
     const path = window.location.pathname;
@@ -421,16 +479,37 @@ function handlePossibleNavigation() {
     lastProcessedPath = path;
 
     console.log(`🎯 Navigated to user ${userId} (path: ${path})`);
+    rescanCurrentElements();
+}
 
-    // Guard against Vue reusing a DOM node across the navigation: clear any
-    // leftover markers so processScoreElements is willing to re-check them.
-    document.querySelectorAll('.play-detail--highlightable[data-injected]').forEach(el => {
-        delete el.dataset.injected;
-    });
+/**
+ * Re-checks every score box currently in the DOM. Safe to call as often as
+ * you like — processScoreElements only takes action on boxes whose linked
+ * score ID doesn't match what we last rendered for them, so a rescan that
+ * finds nothing new is a cheap no-op.
+ */
+function rescanCurrentElements() {
     processNewNodes(document.querySelectorAll('.play-detail--highlightable'));
+}
+
+/**
+ * A steady heartbeat rescan, independent of any specific trigger. We already
+ * catch most changes instantly via the MutationObserver (new nodes / href
+ * changes) or right after a URL change — but some UI actions don't produce
+ * EITHER of those signals. "Show More" is a likely example: it may just be
+ * un-hiding score boxes that were already sitting in the DOM (no new nodes,
+ * no href change), which neither of our other triggers can see at all. This
+ * interval is the general-purpose fallback that catches that (and anything
+ * else we haven't specifically anticipated) within a second or two, without
+ * needing to know anything about how the site implements a given feature.
+ */
+function startHeartbeatRescan() {
+    setInterval(rescanCurrentElements, 1000);
 }
 
 // Initialization
 patchHistoryForSpaNavigation();
 handlePossibleNavigation();
 setupScoreObserver();
+startUrlPolling();
+startHeartbeatRescan();
